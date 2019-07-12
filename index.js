@@ -3,12 +3,13 @@
 import {
   NativeModules,
   Platform,
+  Linking,
 } from 'react-native';
 import RNFS from 'react-native-fs';
 
 const RNAppUpdate = NativeModules.RNAppUpdate;
 
-const jobId = -1;
+let jobId = -1;
 
 class AppUpdate {
   constructor(options) {
@@ -39,16 +40,11 @@ class AppUpdate {
 
   getApkVersionSuccess(remote) {
     console.log("getApkVersionSuccess", remote);
-    if (RNAppUpdate.versionName !== remote.versionName) {
-      if (remote.forceUpdate) {
-        if(this.options.forceUpdateApp) {
-          this.options.forceUpdateApp();
-        }
-        this.downloadApk(remote);
-      } else if (this.options.needUpdateApp) {
+    if (RNAppUpdate.versionCode < parseInt(remote.androidVersion.version)) {
+      if (this.options.needUpdateApp) {
         this.options.needUpdateApp((isUpdate) => {
           if (isUpdate) {
-            this.downloadApk(remote);
+            this.goToPlayStore(remote);
           }
         });
       }
@@ -57,48 +53,12 @@ class AppUpdate {
     }
   }
 
-  downloadApk(remote) {
-    const progress = (data) => {
-      const percentage = ((100 * data.bytesWritten) / data.contentLength) | 0;
-      this.options.downloadApkProgress && this.options.downloadApkProgress(percentage);
-    };
-    const begin = (res) => {
-      console.log("downloadApkStart");
-      this.options.downloadApkStart && this.options.downloadApkStart();
-    };
-    const progressDivider = 1;
-    const downloadDestPath = `${RNFS.DocumentDirectoryPath}/NewApp.apk`;
-
-    const ret = RNFS.downloadFile({
-      fromUrl: remote.apkUrl,
-      toFile: downloadDestPath,
-      begin,
-      progress,
-      background: true,
-      progressDivider
-    });
-
-    jobId = ret.jobId;
-
-    ret.promise.then((res) => {
-      console.log("downloadApkEnd");
-      this.options.downloadApkEnd && this.options.downloadApkEnd();
-      RNAppUpdate.installApk(downloadDestPath);
-
-      jobId = -1;
-    }).catch((err) => {
-      this.downloadApkError(err);
-
-      jobId = -1;
-    });
+  goToPlayStore(remote){
+    Linking.openURL('https://play.google.com/store/apps/details?id=com.queencar.users');
   }
 
   getAppStoreVersion() {
-    if (!this.options.iosAppId) {
-      console.log("iosAppId doesn't exist.");
-      return;
-    }
-    this.GET("https://itunes.apple.com/lookup?id=" + this.options.iosAppId, this.getAppStoreVersionSuccess.bind(this), this.getVersionError.bind(this));
+    this.GET(`https://itunes.apple.com/search?term=queencar&entity=software`, this.getAppStoreVersionSuccess.bind(this), this.getVersionError.bind(this));
   }
 
   getAppStoreVersionSuccess(data) {
@@ -106,14 +66,14 @@ class AppUpdate {
       console.log("iosAppId is wrong.");
       return;
     }
-    const result = data.results[0];
-    const version = result.version;
-    const trackViewUrl = result.trackViewUrl;
-    if (version !== RNAppUpdate.versionName) {
+    const result = data;
+    const version = parseInt(result.results[0].version);
+    
+    if (version > RNAppUpdate.versionCode) {
       if (this.options.needUpdateApp) {
         this.options.needUpdateApp((isUpdate) => {
           if (isUpdate) {
-            RNAppUpdate.installFromAppStore(trackViewUrl);
+            Linking.openURL('https://apps.apple.com/us/app/queen-car/id1410192184');
           }
         });
       }
@@ -122,11 +82,6 @@ class AppUpdate {
 
   getVersionError(err) {
     console.log("getVersionError", err);
-  }
-
-  downloadApkError(err) {
-    console.log("downloadApkError", err);
-    this.options.onError && this.options.onError();
   }
 
   checkUpdate() {
